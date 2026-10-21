@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aplikasi Alarm Offline</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      body {
+        background-color: #0f172a;
+        color: #f8fafc;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        background-color: #1e293b;
+        padding: 30px;
+        border-radius: 16px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        width: 100%;
+        max-width: 400px;
+        text-align: center;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+        margin-bottom: 20px;
+        color: #38bdf8;
+      }
+
+      .clock-display {
+        font-size: 3rem;
+        font-weight: bold;
+        margin-bottom: 25px;
+        letter-spacing: 2px;
+        color: #f1f5f9;
+        background: #0f172a;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #334155;
+      }
+
+      .input-group {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+
+      input[type="time"] {
+        flex: 1;
+        padding: 12px;
+        font-size: 1.2rem;
+        border-radius: 8px;
+        border: 1px solid #475569;
+        background-color: #0f172a;
+        color: white;
+        outline: none;
+      }
+
+      button {
+        padding: 12px 20px;
+        font-size: 1rem;
+        font-weight: bold;
+        border: none;
+        border-radius: 8px;
+        background-color: #38bdf8;
+        color: #0f172a;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      button:hover {
+        background-color: #0ea5e9;
+      }
+
+      .alarm-list {
+        text-align: left;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .alarm-list h3 {
+        font-size: 1rem;
+        margin-bottom: 10px;
+        color: #94a3b8;
+      }
+
+      .alarm-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background-color: #0f172a;
+        padding: 10px 15px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        border: 1px solid #334155;
+      }
+
+      .alarm-item span {
+        font-size: 1.1rem;
+        font-weight: 500;
+      }
+
+      .delete-btn {
+        background-color: #ef4444;
+        color: white;
+        padding: 6px 10px;
+        font-size: 0.85rem;
+        border-radius: 6px;
+      }
+
+      .delete-btn:hover {
+        background-color: #dc2626;
+      }
+
+      .ringing-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(15, 23, 42, 0.95);
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 999;
+      }
+
+      .ringing-overlay h2 {
+        font-size: 2.5rem;
+        color: #ef4444;
+        margin-bottom: 20px;
+        animation: pulse 1s infinite alternate;
+      }
+
+      @keyframes pulse {
+        0% {
+          transform: scale(1);
+        }
+        100% {
+          transform: scale(1.05);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Aplikasi Alarm Offline</h1>
+      <div class="clock-display" id="clock">00:00:00</div>
+
+      <div class="input-group">
+        <input type="time" id="alarmTime" required />
+        <button id="setAlarmBtn">Tambah</button>
+      </div>
+
+      <div class="alarm-list">
+        <h3>Daftar Alarm Aktif</h3>
+        <div id="alarmsContainer">
+          <!-- Daftar alarm akan muncul di sini -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Tampilan saat alarm berbunyi -->
+    <div class="ringing-overlay" id="ringingOverlay">
+      <h2>⏰ Waktunya Tiba! ⏰</h2>
+      <p id="ringingTime" style="font-size: 1.5rem; margin-bottom: 20px"></p>
+      <button
+        id="stopAlarmBtn"
+        style="
+          background-color: #ef4444;
+          color: white;
+          padding: 15px 30px;
+          font-size: 1.2rem;
+        "
+      >
+        Matikan Alarm
+      </button>
+    </div>
+
+    <script>
+      const clockEl = document.getElementById("clock");
+      const alarmTimeInput = document.getElementById("alarmTime");
+      const setAlarmBtn = document.getElementById("setAlarmBtn");
+      const alarmsContainer = document.getElementById("alarmsContainer");
+      const ringingOverlay = document.getElementById("ringingOverlay");
+      const ringingTimeEl = document.getElementById("ringingTime");
+      const stopAlarmBtn = document.getElementById("stopAlarmBtn");
+
+      let alarms = [];
+      let audioCtx = null;
+      let alarmInterval = null;
+
+      // Update Jam Realtime
+      function updateClock() {
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, "0");
+        const minutes = String(now.getMinutes()).padStart(2, "0");
+        const seconds = String(now.getSeconds()).padStart(2, "0");
+        const currentTimeString = `${hours}:${minutes}:${seconds}`;
+
+        clockEl.textContent = currentTimeString;
+
+        // Cek apakah ada alarm yang cocok (format HH:MM)
+        const currentHM = `${hours}:${minutes}`;
+        checkAlarms(currentHM, seconds);
+      }
+
+      setInterval(updateClock, 1000);
+
+      // Tambah Alarm
+      setAlarmBtn.addEventListener("click", () => {
+        const timeVal = alarmTimeInput.value;
+        if (!timeVal) {
+          alert("Silakan pilih waktu alarm terlebih dahulu!");
+          return;
+        }
+
+        if (!alarms.includes(timeVal)) {
+          alarms.push(timeVal);
+          alarms.sort();
+          renderAlarms();
+          alarmTimeInput.value = "";
+        } else {
+          alert("Alarm pada waktu tersebut sudah ada.");
+        }
+      });
+
+      // Render Daftar Alarm ke UI
+      function renderAlarms() {
+        alarmsContainer.innerHTML = "";
+        if (alarms.length === 0) {
+          alarmsContainer.innerHTML =
+            '<p style="color: #64748b; font-size: 0.9rem;">Belum ada alarm aktif.</p>';
+          return;
+        }
+
+        alarms.forEach((time, index) => {
+          const item = document.createElement("div");
+          item.className = "alarm-item";
+          item.innerHTML = `
+                    <span>${time}</span>
+                    <button class="delete-btn" onclick="deleteAlarm(${index})">Hapus</button>
+                `;
+          alarmsContainer.appendChild(item);
+        });
+      }
+
+      // Hapus Alarm
+      window.deleteAlarm = function (index) {
+        alarms.splice(index, 1);
+        renderAlarms();
+      };
+
+      // Cek Pemicu Alarm
+      function checkAlarms(currentHM, currentSec) {
+        // Berbunyi tepat pada detik ke-0 pada menit yang sama
+        if (alarms.includes(currentHM) && currentSec === "00") {
+          triggerAlarm(currentHM);
+        }
+      }
+
+      // Jalankan Suara dan Tampilan Alarm
+      function triggerAlarm(timeStr) {
+        ringingTimeEl.textContent = `Pukul ${timeStr}`;
+        ringingOverlay.style.display = "flex";
+        startBeeping();
+      }
+
+      // Web Audio API untuk suara alarm tanpa file eksternal
+      function startBeeping() {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        if (alarmInterval) clearInterval(alarmInterval);
+
+        alarmInterval = setInterval(() => {
+          if (audioCtx.state === "suspended") {
+            audioCtx.resume();
+          }
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+
+          osc.type = "sine";
+          osc.frequency.value = 880; // Frekuensi nada tinggi (A5)
+
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+
+          osc.start();
+          gain.gain.exponentialRampToValueAtTime(
+            0.00001,
+            audioCtx.currentTime + 0.5,
+          );
+          osc.stop(audioCtx.currentTime + 0.5);
+        }, 800); // Bunyi setiap 0.8 detik
+      }
+
+      // Matikan Alarm
+      stopAlarmBtn.addEventListener("click", () => {
+        ringingOverlay.style.display = "none";
+        if (alarmInterval) {
+          clearInterval(alarmInterval);
+          alarmInterval = null;
+        }
+      });
+
+      // Inisialisasi awal tampilan list kosong
+      renderAlarms();
+    </script>
+  </body>
+</html>
